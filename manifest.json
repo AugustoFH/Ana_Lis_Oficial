@@ -8,8 +8,8 @@
   },
   "TYPE": "SERVER",
   "VERSION": "1",
-  "HANDLER": "https://ana-lis.onrender.com/handler",
-  "INSTALL_URL": "https://ana-lis.onrender.com/install",
+  "HANDLER": "https://lis-v2-bot.onrender.com/handler",
+  "INSTALL_URL": "https://lis-v2-bot.onrender.com/install",
   "LANG": {
     "br": {
       "MENU_TITLE": "Ana Lis – Bot GPT",
