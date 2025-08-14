@@ -27,7 +27,7 @@ PUBLIC_URL = "https://ana-lis.onrender.com"
 WEBHOOK_KEY = "mhomlf8nwufnmyor"  # Substitua pela sua chave real
 BITRIX_WEBHOOK = "https://laboratoriocac.bitrix24.com.br/rest/1/mhomlf8nwufnmyor/"
 
-@app.route('/install', methods=['POST'])
+@app.route('/install', methods=['GET', 'POST'])
 def install():
     data = request.args.to_dict()
     print("📦 Dados recebidos na instalação:", data)
