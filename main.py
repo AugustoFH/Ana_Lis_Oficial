@@ -23,7 +23,7 @@ BOT_NAME = "Ana Lis"
 BOT_COLOR = "ORANGE"
 WELCOME_MESSAGE = "Olá! Sou a Ana Lis, sua assistente virtual. Como posso te ajudar?"
 
-PUBLIC_URL = "https://ana-lis.onrender.com"
+PUBLIC_URL = "https://lis-v2-bot.onrender.com"
 WEBHOOK_KEY = "mhomlf8nwufnmyor"  # Substitua pela sua chave real
 BITRIX_WEBHOOK = "https://laboratoriocac.bitrix24.com.br/rest/1/mhomlf8nwufnmyor/"
 
