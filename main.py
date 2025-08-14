@@ -24,7 +24,7 @@ BOT_COLOR = "ORANGE"
 WELCOME_MESSAGE = "Olá! Sou a Ana Lis - Agente IA, sua assistente virtual. Como posso te ajudar?"
 
 PUBLIC_URL = "https://lis-v2-bot.onrender.com"
-WEBHOOK_KEY = "ycsu4kix9ahlcff0"  # Substitua pela sua chave real
+WEBHOOK_KEY = "jvlko7nqb9mo0lo0"  # Substitua pela sua chave real
 BITRIX_WEBHOOK = f"https://laboratoriocac.bitrix24.com.br/rest/1/{WEBHOOK_KEY}"
 
 @app.route('/install', methods=['POST'])
@@ -84,7 +84,7 @@ def handler():
                     f"{BITRIX_WEBHOOK}/imbot.message.add.json",
                     json={
                         "DIALOG_ID": dialog_id,
-                        "CLIENT_ID": "50",
+                        "CLIENT_ID": "8",
                         "MESSAGE": mensagem_limite
                     },
                     headers={"Content-Type": "application/json"}
@@ -124,7 +124,7 @@ def handler():
             f"{BITRIX_WEBHOOK}/imbot.message.add.json",
             json={
                 "DIALOG_ID": dialog_id,
-                "CLIENT_ID": "50",
+                "CLIENT_ID": "8",
                 "MESSAGE": resposta_ia
             },
             headers={"Content-Type": "application/json"}
@@ -230,6 +230,82 @@ def bitrix_handler():
     except Exception as e:
         app.logger.error(f"Erro no /handler: {e}")
         return jsonify({"status":"error", "message": str(e)}), 500
+# ====== fim /handler ======
+
+# ====== Bitrix /handler (robusto: JSON + x-www-form-urlencoded) ======
+import logging, re
+from utils_assistant import run_assistant_and_get_text, send_bitrix_message
+
+logging.basicConfig(level=logging.INFO)
+BITRIX_WEBHOOK = os.getenv("BITRIX_WEBHOOK", "https://laboratoriocac.bitrix24.com.br/rest/1/ycsu4kix9ahlcff0/")
+
+def _flatten_form_all(form):
+    """Preserva todos os campos como chegam (inclusive chaves tipo data[PARAMS][...])."""
+    out = {}
+    try:
+        items = form.items(multi=True)  # Werkzeug MultiDict
+        for k, v in items:
+            if k in out:
+                # transforme em lista
+                if isinstance(out[k], list):
+                    out[k].append(v)
+                else:
+                    out[k] = [out[k], v]
+            else:
+                out[k] = v
+    except Exception:
+        # fallback simples
+        for k in form.keys():
+            out[k] = form.getlist(k) if hasattr(form, "getlist") else form.get(k)
+    return out
+
+def _pick(keys, d):
+    for k in keys:
+        if k in d and d[k]:
+            return d[k]
+    return None
+
+@app.route("/handler", methods=["POST"])
+def bitrix_handler():
+    # Aceita JSON e form-urlencoded
+    payload = request.get_json(silent=True)
+    content_type = request.headers.get("Content-Type","")
+    if not payload:
+        payload = _flatten_form_all(request.form)
+
+    app.logger.info(f"[HANDLER] ct={content_type}")
+    app.logger.info(f"[HANDLER] payload={payload}")
+
+    # Evento
+    evt = (payload.get("event") or payload.get("EVENT") or "").upper()
+    if evt in ("ONIMBOTMESSAGEADD", "ONIMBOTJOINCHAT", "ONIMBOTDELETE"):
+        # Extração abrangente de IDs e mensagem
+        dialog_id = _pick([
+            "data[PARAMS][DIALOG_ID]","data[DIALOG_ID]","DIALOG_ID",
+            "data[PARAMS][CHAT_ID]","CHAT_ID"], payload)
+        text = _pick(["data[PARAMS][MESSAGE]","data[MESSAGE]","MESSAGE"], payload) or ""
+
+        # Se nada veio, tenta pegar mensagem crua
+        if not text and isinstance(payload, dict):
+            for k,v in payload.items():
+                if "MESSAGE" in k and isinstance(v, str):
+                    text = v; break
+
+        # 1) Roda o assistant e obtém resposta
+        resposta = run_assistant_and_get_text(text, timeout_s=18)
+
+        # 2) Envia ao Bitrix (sem precisar forçar BOT_ID se não quiser)
+        try:
+            r = send_bitrix_message(dialog_id, resposta)
+            app.logger.info(f"[send_bitrix_message] {r}")
+        except Exception as e:
+            app.logger.error(f"Falha ao enviar ao Bitrix: {e}")
+
+        # 3) Retorna 200 rápido
+        return jsonify({"status":"ok"}), 200
+
+    # Outros eventos: retorna 200 para não gerar retry
+    return jsonify({"status":"ignored","event":evt}), 200
 # ====== fim /handler ======
 
 if __name__ == "__main__":

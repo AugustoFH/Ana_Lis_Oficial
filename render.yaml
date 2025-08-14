@@ -17,10 +17,14 @@ services:
 
     envVars:
       - key: BITRIX_WEBHOOK
-        value: https://laboratoriocac.bitrix24.com.br/rest/1/ycsu4kix9ahlcff0/
+        value: https://laboratoriocac.bitrix24.com.br/rest/1/jvlko7nqb9mo0lo0/
       - key: PUBLIC_URL
         value: https://lis-v2-bot.onrender.com
 
 
       - key: BOT_ID
         value: "134"
+
+
+      - key: BITRIX_WEBHOOK
+        value: https://laboratoriocac.bitrix24.com.br/rest/1/ycsu4kix9ahlcff0/
