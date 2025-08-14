@@ -1,0 +1,20 @@
+{
+  "CODE": "ana.lis.bot",
+  "NAME": {
+    "br": "Ana Lis – Bot GPT"
+  },
+  "DESCRIPTION": {
+    "br": "Bot interno para responder dúvidas da equipe em relação às operações do negócio"
+  },
+  "TYPE": "SERVER",
+  "VERSION": "1",
+  "HANDLER": "https://ana-lis.onrender.com/handler",
+  "INSTALL_URL": "https://ana-lis.onrender.com/install",
+  "LANG": {
+    "br": {
+      "MENU_TITLE": "Ana Lis – Bot GPT",
+      "TITLE": "Ana Lis",
+      "DESCRIPTION": "Eu sou Ana Lis, a I.A do Lab CAC. Como posso te ajudar?"
+    }
+  }
+}
