@@ -24,7 +24,7 @@ BOT_COLOR = "ORANGE"
 WELCOME_MESSAGE = "Olá! Sou a Ana Lis, sua assistente virtual. Como posso te ajudar?"
 
 PUBLIC_URL = "https://lis-v2-bot.onrender.com"
-WEBHOOK_KEY = "mhomlf8nwufnmyor"  # Substitua pela sua chave real
+WEBHOOK_KEY = "jvlko7nqb9mo0lo0"  # Substitua pela sua chave real
 BITRIX_WEBHOOK = f"https://laboratoriocac.bitrix24.com.br/rest/1/{WEBHOOK_KEY}"
 
 @app.route('/install', methods=['POST'])
