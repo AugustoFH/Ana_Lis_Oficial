@@ -64,7 +64,7 @@ def handler():
         if request.is_json:
         data = request.get_json()
         else:
-        data = request.form.to_dict(
+        data = request.form.to_dict()
         print("📨 Dados recebidos no /handler:", data)
 
         mensagem_usuario = data.get("data[PARAMS][MESSAGE]", "")
