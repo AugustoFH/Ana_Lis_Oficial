@@ -1,4 +1,3 @@
-
 from openai import OpenAI
 import os
 import time
@@ -31,7 +30,11 @@ def chamar_openai_com(mensagem_usuario: str) -> str:
             time.sleep(1)
 
         resposta = openai_client.beta.threads.messages.list(thread_id=thread.id)
-        return resposta.data[0].content[0].text.value.strip()
+        for msg in resposta.data:
+            if msg.role == "assistant":
+                return msg.content[0].text.value.strip()
+
+        return "❗A IA não gerou uma resposta válida."
 
     except Exception as e:
         print("❌ Erro em chamar_openai_com:", e)
