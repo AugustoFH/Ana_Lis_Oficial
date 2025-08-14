@@ -24,7 +24,7 @@ BOT_COLOR = "ORANGE"
 WELCOME_MESSAGE = "Olá! Sou a Ana Lis - Agente IA, sua assistente virtual. Como posso te ajudar?"
 
 PUBLIC_URL = "https://lis-v2-bot.onrender.com"
-WEBHOOK_KEY = "jvlko7nqb9mo0lo0"  # Substitua pela sua chave real
+WEBHOOK_KEY = "ycsu4kix9ahlcff0"  # Substitua pela sua chave real
 BITRIX_WEBHOOK = f"https://laboratoriocac.bitrix24.com.br/rest/1/{WEBHOOK_KEY}"
 
 @app.route('/install', methods=['POST'])
@@ -84,7 +84,7 @@ def handler():
                     f"{BITRIX_WEBHOOK}/imbot.message.add.json",
                     json={
                         "DIALOG_ID": dialog_id,
-                        "CLIENT_ID": "8",
+                        "CLIENT_ID": "50",
                         "MESSAGE": mensagem_limite
                     },
                     headers={"Content-Type": "application/json"}
@@ -124,7 +124,7 @@ def handler():
             f"{BITRIX_WEBHOOK}/imbot.message.add.json",
             json={
                 "DIALOG_ID": dialog_id,
-                "CLIENT_ID": "8",
+                "CLIENT_ID": "50",
                 "MESSAGE": resposta_ia
             },
             headers={"Content-Type": "application/json"}
