@@ -42,6 +42,7 @@ def install():
 
     payload = {
         "CODE": "ana.lis.bot",
+        "CLIENT_ID": "1",
         "TYPE": "B",
         "EVENT_HANDLER": f"{PUBLIC_URL}/handler",
         "PROPERTIES": {
