@@ -23,11 +23,11 @@ BOT_NAME = "Ana Lis"
 BOT_COLOR = "ORANGE"
 WELCOME_MESSAGE = "Olá! Sou a Ana Lis, sua assistente virtual. Como posso te ajudar?"
 
-PUBLIC_URL = "https://lis-v2-bot.onrender.com"
+PUBLIC_URL = "https://ana-lis.onrender.com"
 WEBHOOK_KEY = "mhomlf8nwufnmyor"  # Substitua pela sua chave real
-BITRIX_WEBHOOK = "https://laboratoriocac.bitrix24.com.br/rest/1/mhomlf8nwufnmyor/"
+BITRIX_WEBHOOK = f"https://laboratoriocac.bitrix24.com.br/rest/1/{WEBHOOK_KEY}"
 
-@app.route('/install', methods=['GET', 'POST'])
+@app.route('/install', methods=['POST'])
 def install():
     data = request.args.to_dict()
     print("📦 Dados recebidos na instalação:", data)
@@ -61,23 +61,67 @@ def install():
 @app.route('/handler', methods=['POST'])
 def handler():
     try:
-        data = request.get_json(force=True)
-        print("📨 Dados recebidos no /handler:", json.dumps(data, indent=2))
+        data = request.form.to_dict()
+        print("📨 Dados recebidos no /handler:", data)
 
-        params = data.get("PARAMS", {})
-        mensagem_usuario = params.get("MESSAGE", "")
-        dialog_id = params.get("DIALOG_ID")
+        mensagem_usuario = data.get("data[PARAMS][MESSAGE]", "")
+        dialog_id = data.get("data[PARAMS][DIALOG_ID]")
 
         if not dialog_id:
             return jsonify({"status": "Diálogo ausente"})
 
-        resposta = "Olá! A Ana Lis está ativa e funcionando corretamente. 😉"
+        # ⏰ Restrição de horário (se ativado)
+        if HABILITAR_RESTRICAO_HORARIO:
+            hora = datetime.now().hour
+            minuto = datetime.now().minute
+            if hora < 6 or (hora == 6 and minuto < 30) or hora >= 23:
+                mensagem_limite = "Ana Lis está disponível das 06:30 às 18:00. Por favor, retorne nesse horário 😊"
+                requests.post(
+                    f"{BITRIX_WEBHOOK}/imbot.message.add.json",
+                    json={
+                        "DIALOG_ID": dialog_id,
+                        "CLIENT_ID": "8",
+                        "MESSAGE": mensagem_limite
+                    },
+                    headers={"Content-Type": "application/json"}
+                )
+                return jsonify({"status": "Fora do horário, resposta enviada."})
 
+        # 📎 Detecta arquivos enviados
+        arquivo_url = None
+        arquivo_nome = None
+
+        for key, value in data.items():
+            if key.endswith("][urlDownload]") and "data[PARAMS][FILES][" in key:
+                arquivo_url = value
+                inicio = key.find("FILES[") + 6
+                fim = key.find("]", inicio)
+                file_id = key[inicio:fim]
+                arquivo_nome = data.get(f"data[PARAMS][FILES][{file_id}][name]", "arquivo_desconhecido")
+                break
+
+        # 🧠 Gera resposta da IA
+        if arquivo_url and arquivo_nome:
+            print("📂 Arquivo detectado! Enviando ao GPT-4o com visão...")
+            try:
+                resposta_ia = processar_arquivo_do_bitrix(arquivo_url, arquivo_nome)
+            except Exception as e:
+                print(f"❌ Erro em processar_arquivo_do_bitrix: {e}")
+                resposta_ia = "❌ O tipo de arquivo não é reconhecido como imagem compatível para análise."
+        elif mensagem_usuario:
+            print("💬 Mensagem de texto detectada! Enviando ao GPT...")
+            resposta_ia = chamar_openai_com(mensagem_usuario)
+            resposta_ia = limpar_marcadores_de_citacao(resposta_ia)
+        else:
+            resposta_ia = "❗Mensagem vazia ou sem arquivo. Por favor, envie um texto ou anexo válido."
+
+        # 📤 Envia resposta para o Bitrix
         requests.post(
             f"{BITRIX_WEBHOOK}/imbot.message.add.json",
             json={
                 "DIALOG_ID": dialog_id,
-                "MESSAGE": resposta
+                "CLIENT_ID": "8",
+                "MESSAGE": resposta_ia
             },
             headers={"Content-Type": "application/json"}
         )
@@ -87,6 +131,7 @@ def handler():
     except Exception as e:
         print("❌ Erro no handler:", e)
         return jsonify({"erro": str(e), "status": "Erro ao processar mensagem"}), 500
+
 
 
 @app.route("/", methods=["GET"])

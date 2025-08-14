@@ -1,7 +1,7 @@
 {
   "CODE": "ana.lis.bot",
   "NAME": {
-    "br": "Ana Lis – Bot GPT"
+    "br": "Ana Lis - Agente IA"
   },
   "DESCRIPTION": {
     "br": "Bot interno para responder dúvidas da equipe em relação às operações do negócio"
@@ -12,8 +12,8 @@
   "INSTALL_URL": "https://lis-v2-bot.onrender.com/install",
   "LANG": {
     "br": {
-      "MENU_TITLE": "Ana Lis – Bot GPT",
-      "TITLE": "Ana Lis",
+      "MENU_TITLE": "Ana Lis - Agente IA",
+      "TITLE": "Ana Lis - Agente IA",
       "DESCRIPTION": "Eu sou Ana Lis, a I.A do Lab CAC. Como posso te ajudar?"
     }
   }
