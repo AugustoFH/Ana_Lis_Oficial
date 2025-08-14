@@ -196,18 +196,33 @@ def bitrix_handler():
                 resposta = "❗Mensagem vazia ou sem arquivo. Por favor, envie um texto ou anexo válido."
             resposta = _limpar_marcadores_de_citacao(resposta)
 
-            # Envia resposta ao Bitrix (im.message.add -> fallback imbot.message.add)
-            if BITRIX_WEBHOOK:
-                try:
-                    url_im = f"{BITRIX_WEBHOOK}/im.message.add"
-                    r = requests.post(url_im, data={"DIALOG_ID": dialog_id, "MESSAGE": resposta}, timeout=15)
-                    if r.status_code != 200 or '"error"' in r.text.lower():
-                        url_bot = f"{BITRIX_WEBHOOK}/imbot.message.add"
-                        requests.post(url_bot, data={"DIALOG_ID": dialog_id, "MESSAGE": resposta}, timeout=15)
-                except Exception as e:
-                    app.logger.error(f"Falha ao enviar resposta ao Bitrix: {e}")
-            else:
-                app.logger.error("BITRIX_WEBHOOK não definido; não será possível responder no chat.")
+            
+            # Verifica se o evento é direcionado a este BOT_ID (quando disponível no payload)
+            # Bitrix envia, em muitos casos, data[PARAMS][BOT_ID] com o id do bot alvo
+            bot_id_event = (
+                payload.get("data[PARAMS][BOT_ID]")
+                or payload.get("data[BOT_ID]")
+                or payload.get("BOT_ID")
+            )
+            TARGET_BOT_ID = os.getenv("BOT_ID")  # defina no Render: BOT_ID=134
+            if TARGET_BOT_ID and bot_id_event and str(bot_id_event) != str(TARGET_BOT_ID):
+                app.logger.info(f"Ignorando evento de outro bot (evento BOT_ID={bot_id_event}, alvo={TARGET_BOT_ID})")
+                return jsonify({"status": "ignored_different_bot"}), 200
+
+            # Envia resposta AO NOVO BOT (força o remetente pelo BOT_ID)
+            try:
+                if not BITRIX_WEBHOOK:
+                    app.logger.error("BITRIX_WEBHOOK não definido; não será possível responder no chat.")
+                else:
+                    BOT_ID_ENV = os.getenv("BOT_ID")
+                    if not BOT_ID_ENV:
+                        app.logger.error("BOT_ID (env) não definido; configure BOT_ID=134 no Render.")
+                    url_bot = f"{BITRIX_WEBHOOK}/imbot.message.add"
+                    data = {"BOT_ID": BOT_ID_ENV, "DIALOG_ID": dialog_id, "MESSAGE": resposta}
+                    r = requests.post(url_bot, data=data, timeout=20)
+                    app.logger.info(f"imbot.message.add status={r.status_code} resp={r.text}")
+            except Exception as e:
+                app.logger.error(f"Falha ao enviar resposta ao Bitrix: {e}")
 
             return jsonify({"status": "ok"}), 200
 
