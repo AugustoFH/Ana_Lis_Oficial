@@ -84,7 +84,7 @@ def handler():
                     f"{BITRIX_WEBHOOK}/imbot.message.add.json",
                     json={
                         "DIALOG_ID": dialog_id,
-                        "CLIENT_ID": "8",
+                        "CLIENT_ID": "50",
                         "MESSAGE": mensagem_limite
                     },
                     headers={"Content-Type": "application/json"}
@@ -124,7 +124,7 @@ def handler():
             f"{BITRIX_WEBHOOK}/imbot.message.add.json",
             json={
                 "DIALOG_ID": dialog_id,
-                "CLIENT_ID": "8",
+                "CLIENT_ID": "50",
                 "MESSAGE": resposta_ia
             },
             headers={"Content-Type": "application/json"}
