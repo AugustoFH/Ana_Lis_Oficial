@@ -19,9 +19,9 @@ app = Flask(__name__)
 HABILITAR_RESTRICAO_HORARIO = False
 
 # Configurações fixas
-BOT_NAME = "Ana Lis"
+BOT_NAME = "Ana Lis - Agente IA - Agente IA"
 BOT_COLOR = "ORANGE"
-WELCOME_MESSAGE = "Olá! Sou a Ana Lis, sua assistente virtual. Como posso te ajudar?"
+WELCOME_MESSAGE = "Olá! Sou a Ana Lis - Agente IA, sua assistente virtual. Como posso te ajudar?"
 
 PUBLIC_URL = "https://lis-v2-bot.onrender.com"
 WEBHOOK_KEY = "jvlko7nqb9mo0lo0"  # Substitua pela sua chave real
@@ -79,7 +79,7 @@ def handler():
             hora = datetime.now().hour
             minuto = datetime.now().minute
             if hora < 6 or (hora == 6 and minuto < 30) or hora >= 23:
-                mensagem_limite = "Ana Lis está disponível das 06:30 às 18:00. Por favor, retorne nesse horário 😊"
+                mensagem_limite = "Ana Lis - Agente IA está disponível das 06:30 às 18:00. Por favor, retorne nesse horário 😊"
                 requests.post(
                     f"{BITRIX_WEBHOOK}/imbot.message.add.json",
                     json={
@@ -140,7 +140,82 @@ def handler():
 
 @app.route("/", methods=["GET"])
 def home():
-    return "Ana Lis está online!"
+    return "Ana Lis - Agente IA está online!"
+
+# ====== Bitrix /handler (robusto: aceita JSON e x-www-form-urlencoded) ======
+import logging
+import re
+logging.basicConfig(level=logging.INFO)
+
+BITRIX_WEBHOOK = os.getenv("BITRIX_WEBHOOK", "https://laboratoriocac.bitrix24.com.br/rest/1/jvlko7nqb9mo0lo0/")  # inbound com escopos imbot, im
+
+def _flatten_form(form):
+    d = {}
+    try:
+        lists = form.lists()
+    except Exception:
+        # Compat fallback
+        lists = [(k, form.getlist(k)) for k in form.keys()]
+    for k, v in lists:
+        d[k] = v[0] if isinstance(v, list) and len(v) == 1 else v
+    return d
+
+def _limpar_marcadores_de_citacao(resposta: str) -> str:
+    resposta = re.sub(r"[].*?[]", "", resposta)
+    return resposta.replace("", "").replace("", "").replace("", "")
+
+@app.route("/handler", methods=["POST"])
+def bitrix_handler():
+    try:
+        payload = request.get_json(silent=True)
+        if not payload:
+            payload = _flatten_form(request.form)
+
+        app.logger.info(f"[HANDLER] headers={dict(request.headers)}")
+        app.logger.info(f"[HANDLER] payload={payload}")
+
+        event = (payload.get("event") or payload.get("EVENT") or "").upper()
+        # Eventos comuns: OnImBotMessageAdd, OnImBotJoinChat
+        if event in ("ONIMBOTMESSAGEADD", "ONIMBOTJOINCHAT", "ONIMBOTDELETE"):
+            dialog_id = (
+                payload.get("data[PARAMS][DIALOG_ID]")
+                or payload.get("data[DIALOG_ID]")
+                or payload.get("DIALOG_ID")
+                or payload.get("data[PARAMS][CHAT_ID]")
+            )
+            text = (
+                payload.get("data[PARAMS][MESSAGE]")
+                or payload.get("data[MESSAGE]")
+                or payload.get("MESSAGE")
+                or ""
+            )
+
+            # Se quiser usar sua lógica de IA:
+            resposta = text.strip()
+            if not resposta:
+                resposta = "❗Mensagem vazia ou sem arquivo. Por favor, envie um texto ou anexo válido."
+            resposta = _limpar_marcadores_de_citacao(resposta)
+
+            # Envia resposta ao Bitrix (im.message.add -> fallback imbot.message.add)
+            if BITRIX_WEBHOOK:
+                try:
+                    url_im = f"{BITRIX_WEBHOOK}/im.message.add"
+                    r = requests.post(url_im, data={"DIALOG_ID": dialog_id, "MESSAGE": resposta}, timeout=15)
+                    if r.status_code != 200 or '"error"' in r.text.lower():
+                        url_bot = f"{BITRIX_WEBHOOK}/imbot.message.add"
+                        requests.post(url_bot, data={"DIALOG_ID": dialog_id, "MESSAGE": resposta}, timeout=15)
+                except Exception as e:
+                    app.logger.error(f"Falha ao enviar resposta ao Bitrix: {e}")
+            else:
+                app.logger.error("BITRIX_WEBHOOK não definido; não será possível responder no chat.")
+
+            return jsonify({"status": "ok"}), 200
+
+        return jsonify({"status": "ignored", "event": event}), 200
+    except Exception as e:
+        app.logger.error(f"Erro no /handler: {e}")
+        return jsonify({"status":"error", "message": str(e)}), 500
+# ====== fim /handler ======
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))  # Render define a porta via variável de ambiente

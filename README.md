@@ -1,5 +1,5 @@
 
-# Ana Lis Bot
+# Ana Lis - Agente IA (Bot)
 
 Bot interno do Lab CAC para responder dúvidas operacionais da equipe via Bitrix24.
 
