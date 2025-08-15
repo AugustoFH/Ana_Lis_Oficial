@@ -35,8 +35,8 @@ BITRIX_WEBHOOK = os.getenv(
 ).rstrip("/")  # sem barra no fim, para concatenar melhor
 
 # Enviar como BOT (Opção A)
-BOT_ID = os.getenv("BOT_ID", "134")          # defina no Render se quiser diferente
-CLIENT_ID_RESPOSTA = "134"                   # fixo conforme seu pedido
+BOT_ID = os.getenv("BOT_ID", "136")          # defina no Render se quiser diferente
+CLIENT_ID_RESPOSTA = "136"                   # fixo conforme seu pedido
 
 # =========================
 # Utilitários
