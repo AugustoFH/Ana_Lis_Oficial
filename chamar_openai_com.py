@@ -4,7 +4,16 @@ import os, time, requests, logging
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 ASSISTANT_ID   = os.getenv("ASSISTANT_ID")  # ex.: asst_...
 
-log = logging.getLogger(__name__)
+log = logging.getLogger("chamar_openai_com")
+
+def _headers():
+    if not OPENAI_API_KEY:
+        raise RuntimeError("OPENAI_API_KEY ausente.")
+    return {
+        "Authorization": f"Bearer {OPENAI_API_KEY}",
+        "Content-Type": "application/json",
+        "OpenAI-Beta": "assistants=v2",   # <<< OBRIGATÓRIO para Threads/Runs
+    }
 
 def chamar_openai_com(user_text: str, timeout_s: int = 25) -> str:
     if not OPENAI_API_KEY:
@@ -14,25 +23,27 @@ def chamar_openai_com(user_text: str, timeout_s: int = 25) -> str:
         log.error("ASSISTANT_ID ausente.")
         return "⚠️ Configuração da IA ausente (ASSISTANT_ID)."
 
-    headers = {"Authorization": f"Bearer {OPENAI_API_KEY}", "Content-Type": "application/json"}
-
     try:
         # 1) Thread
-        r = requests.post("https://api.openai.com/v1/threads", headers=headers, json={}, timeout=15)
+        r = requests.post("https://api.openai.com/v1/threads", headers=_headers(), json={}, timeout=15)
         r.raise_for_status()
         thread_id = r.json()["id"]
 
         # 2) Mensagem do usuário
         r = requests.post(
             f"https://api.openai.com/v1/threads/{thread_id}/messages",
-            headers=headers, json={"role": "user", "content": user_text}, timeout=15
+            headers=_headers(),
+            json={"role": "user", "content": user_text},
+            timeout=15
         )
         r.raise_for_status()
 
         # 3) Run
         r = requests.post(
             f"https://api.openai.com/v1/threads/{thread_id}/runs",
-            headers=headers, json={"assistant_id": ASSISTANT_ID}, timeout=15
+            headers=_headers(),
+            json={"assistant_id": ASSISTANT_ID},
+            timeout=15
         )
         r.raise_for_status()
         run_id = r.json()["id"]
@@ -42,7 +53,8 @@ def chamar_openai_com(user_text: str, timeout_s: int = 25) -> str:
         while True:
             rr = requests.get(
                 f"https://api.openai.com/v1/threads/{thread_id}/runs/{run_id}",
-                headers=headers, timeout=15
+                headers=_headers(),
+                timeout=15
             )
             rr.raise_for_status()
             st = rr.json()["status"]
@@ -60,24 +72,25 @@ def chamar_openai_com(user_text: str, timeout_s: int = 25) -> str:
         # 5) Buscar a resposta do assistant
         mm = requests.get(
             f"https://api.openai.com/v1/threads/{thread_id}/messages",
-            headers=headers, params={"limit": 10}, timeout=15
+            headers=_headers(),
+            params={"limit": 10},
+            timeout=15
         )
         mm.raise_for_status()
-        for m in mm.json().get("data", []):
+        data = mm.json().get("data", [])
+        for m in data:
             if m.get("role") == "assistant":
                 parts = []
                 for c in m.get("content", []):
                     if c.get("type") == "text":
                         parts.append(c["text"]["value"])
                 if parts:
-                    text = "\n".join(parts).strip()
-                    return text
+                    return "\n".join(parts).strip()
 
         log.error("Não encontrei conteúdo de resposta do assistant.")
         return "❗Não encontrei conteúdo de resposta do assistant."
 
     except requests.exceptions.RequestException as e:
-        # Log detalhado do erro HTTP
         detail = ""
         if getattr(e, "response", None) is not None:
             try:
