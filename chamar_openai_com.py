@@ -1,41 +1,88 @@
-from openai import OpenAI
-import os
-import time
+# chamar_openai_com.py
+import os, time, requests, logging
 
-openai_client = OpenAI(api_key=os.getenv("API_KEY"))
-ASSISTANT_ID = os.getenv("ASSISTANT_ID")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+ASSISTANT_ID   = os.getenv("ASSISTANT_ID")  # ex.: asst_...
 
-def chamar_openai_com(mensagem_usuario: str) -> str:
+log = logging.getLogger(__name__)
+
+def chamar_openai_com(user_text: str, timeout_s: int = 25) -> str:
+    if not OPENAI_API_KEY:
+        log.error("OPENAI_API_KEY ausente.")
+        return "⚠️ Configuração da IA ausente (OPENAI_API_KEY)."
+    if not ASSISTANT_ID:
+        log.error("ASSISTANT_ID ausente.")
+        return "⚠️ Configuração da IA ausente (ASSISTANT_ID)."
+
+    headers = {"Authorization": f"Bearer {OPENAI_API_KEY}", "Content-Type": "application/json"}
+
     try:
-        thread = openai_client.beta.threads.create()
+        # 1) Thread
+        r = requests.post("https://api.openai.com/v1/threads", headers=headers, json={}, timeout=15)
+        r.raise_for_status()
+        thread_id = r.json()["id"]
 
-        openai_client.beta.threads.messages.create(
-            thread_id=thread.id,
-            role="user",
-            content=mensagem_usuario
+        # 2) Mensagem do usuário
+        r = requests.post(
+            f"https://api.openai.com/v1/threads/{thread_id}/messages",
+            headers=headers, json={"role": "user", "content": user_text}, timeout=15
         )
+        r.raise_for_status()
 
-        run = openai_client.beta.threads.runs.create(
-            thread_id=thread.id,
-            assistant_id=ASSISTANT_ID,
-            instructions="Responda com base nas orientações internas do laboratório."
+        # 3) Run
+        r = requests.post(
+            f"https://api.openai.com/v1/threads/{thread_id}/runs",
+            headers=headers, json={"assistant_id": ASSISTANT_ID}, timeout=15
         )
+        r.raise_for_status()
+        run_id = r.json()["id"]
 
+        # 4) Poll até completar
+        t0 = time.time()
         while True:
-            status = openai_client.beta.threads.runs.retrieve(thread_id=thread.id, run_id=run.id)
-            if status.status == "completed":
+            rr = requests.get(
+                f"https://api.openai.com/v1/threads/{thread_id}/runs/{run_id}",
+                headers=headers, timeout=15
+            )
+            rr.raise_for_status()
+            st = rr.json()["status"]
+            if st in ("completed", "failed", "cancelled", "expired"):
                 break
-            elif status.status == "failed":
-                return "❗Erro ao processar com a IA. Tente novamente."
-            time.sleep(1)
+            if time.time() - t0 > timeout_s:
+                log.warning(f"Timeout aguardando run {run_id} (status atual: {st})")
+                return "⏳ Ainda processando sua solicitação. Tente novamente em alguns segundos."
+            time.sleep(0.75)
 
-        resposta = openai_client.beta.threads.messages.list(thread_id=thread.id)
-        for msg in resposta.data:
-            if msg.role == "assistant":
-                return msg.content[0].text.value.strip()
+        if st != "completed":
+            log.error(f"Run não completou: status={st} run={run_id}")
+            return f"❗Falha no processamento (status: {st})."
 
-        return "❗A IA não gerou uma resposta válida."
+        # 5) Buscar a resposta do assistant
+        mm = requests.get(
+            f"https://api.openai.com/v1/threads/{thread_id}/messages",
+            headers=headers, params={"limit": 10}, timeout=15
+        )
+        mm.raise_for_status()
+        for m in mm.json().get("data", []):
+            if m.get("role") == "assistant":
+                parts = []
+                for c in m.get("content", []):
+                    if c.get("type") == "text":
+                        parts.append(c["text"]["value"])
+                if parts:
+                    text = "\n".join(parts).strip()
+                    return text
 
-    except Exception as e:
-        print("❌ Erro em chamar_openai_com:", e)
-        return "❗Ocorreu um erro interno ao conversar com a IA."
+        log.error("Não encontrei conteúdo de resposta do assistant.")
+        return "❗Não encontrei conteúdo de resposta do assistant."
+
+    except requests.exceptions.RequestException as e:
+        # Log detalhado do erro HTTP
+        detail = ""
+        if getattr(e, "response", None) is not None:
+            try:
+                detail = f" | OpenAI {e.response.status_code}: {e.response.text[:400]}"
+            except Exception:
+                detail = f" | OpenAI {e.response.status_code}"
+        log.error(f"Erro ao chamar OpenAI: {e}{detail}")
+        return "❗Erro ao processar com a IA. Tente novamente."
