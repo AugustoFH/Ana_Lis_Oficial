@@ -174,19 +174,38 @@ def bitrix_handler():
             "data[PARAMS][CHAT_ID]", "CHAT_ID"
         ], payload)
         text = _pick(["data[PARAMS][MESSAGE]", "data[MESSAGE]", "MESSAGE"], payload) or ""
-        if not dialog_id:
-            return jsonify({"status": "no_dialog"}), 200
+       # evt e dialog_id já extraídos acima...
+# evt = (payload.get("event") or payload.get("EVENT") or "").upper()
+# dialog_id = _pick([...], payload)
+# text = _pick([...], payload) or ""
 
-        if HABILITAR_RESTRICAO_HORARIO:
-            hora = datetime.now().hour
-            minuto = datetime.now().minute
-            if hora < 6 or (hora == 6 and minuto < 30) or hora >= 23:
-                mensagem_limite = "Ana Lis - Agente IA está disponível das 06:30 às 18:00. Por favor, retorne nesse horário 😊"
-                try:
-                    _send_imbot_message(dialog_id, mensagem_limite)
-                except Exception as e:
-                    app.logger.error(f"Falha ao enviar msg de limite: {e}")
-                return jsonify({"status": "fora_do_horario"}), 200
+if not dialog_id:
+    return jsonify({"status": "no_dialog"}), 200
+
+# 1) Horário primeiro (aplica a welcome e mensagens)
+if HABILITAR_RESTRICAO_HORARIO:
+    hora = datetime.now().hour
+    minuto = datetime.now().minute
+    if hora < 6 or (hora == 6 and minuto < 30) or hora >= 23:
+        mensagem_limite = (
+            "Ana Lis - Agente IA está disponível das 06:30 às 18:00. "
+            "Por favor, retorne nesse horário 😊"
+        )
+        try:
+            _send_imbot_message(dialog_id, mensagem_limite)  # usa BOT_ID=136 e CLIENT_ID=1 (já configurado)
+        except Exception as e:
+            app.logger.error(f"Falha ao enviar msg de limite: {e}")
+        return jsonify({"status": "fora_do_horario"}), 200
+
+# 2) Welcome DEPOIS de checar horário e ANTES de chamar a IA
+if evt in ("ONIMBOTJOINCHAT", "ONIMBOTWELCOMEMESSAGE"):
+    try:
+        _send_imbot_message(dialog_id, WELCOME_MESSAGE)
+    except Exception as e:
+        app.logger.error(f"Falha ao enviar welcome: {e}")
+    return jsonify({"status": "welcome_sent"}), 200
+
+# 3) Só daqui pra frente processa a mensagem normal (texto/arquivo + IA)
 
         # Detecta arquivo
         arquivo_url = None
