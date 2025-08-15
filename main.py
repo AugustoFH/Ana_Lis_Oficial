@@ -1,6 +1,5 @@
 import os
 import re
-import time
 import logging
 import requests
 from datetime import datetime
@@ -16,40 +15,38 @@ app = Flask(__name__)
 # =========================
 # Configurações
 # =========================
-# Controle de horário (desabilitado por padrão)
 HABILITAR_RESTRICAO_HORARIO = False
 
-# Identidade (cosmético)
 BOT_NAME = "Ana Lis - Agente IA"
 BOT_COLOR = "ORANGE"
 WELCOME_MESSAGE = "Olá! Sou a Ana Lis - Agente IA, sua assistente virtual. Como posso te ajudar?"
 
-# URLs e Webhook
 PUBLIC_URL = os.getenv("PUBLIC_URL", "https://lis-v2-bot.onrender.com")
 
-# NOVO webhook informado por você (pode sobrescrever via env BITRIX_WEBHOOK)
-WEBHOOK_KEY_DEFAULT = "ycsu4kix9ahlcff0"
+# Webhook NOVO (eventos e envio). Use a URL COMPLETA:
+# ex.: https://laboratoriocac.bitrix24.com.br/rest/1/ycsu4kix9ahlcff0/
+WEBHOOK_KEY_NEW_DEFAULT = "ycsu4kix9ahlcff0"
 BITRIX_WEBHOOK = os.getenv(
     "BITRIX_WEBHOOK",
-    f"https://laboratoriocac.bitrix24.com.br/rest/1/{WEBHOOK_KEY_DEFAULT}"
-).rstrip("/")  # sem barra no fim, para concatenar melhor
+    f"https://laboratoriocac.bitrix24.com.br/rest/1/{WEBHOOK_KEY_NEW_DEFAULT}/"
+).rstrip("/")
 
-# Enviar como BOT (Opção A)
-BOT_ID = os.getenv("BOT_ID", "136")          # defina no Render se quiser diferente
-CLIENT_ID_RESPOSTA = "136"                   # fixo conforme seu pedido
+# Opcional: se quiser separar “envio”, mas por padrão usa o mesmo
+BITRIX_WEBHOOK_SEND = os.getenv("BITRIX_WEBHOOK_SEND", BITRIX_WEBHOOK).rstrip("/")
+
+# Enviar como BOT
+BOT_ID = os.getenv("BOT_ID", "136")  # defina no Render se precisar
 
 # =========================
 # Utilitários
 # =========================
 def limpar_marcadores_de_citacao(resposta: str) -> str:
-    """Remove marcadores especiais que podem aparecer em algumas respostas."""
     if not isinstance(resposta, str):
         return resposta
     resposta = re.sub(r"[].*?[]", "", resposta or "")
     return resposta.replace("", "")
 
 def _flatten_form_all(form):
-    """Preserva todos os campos do form (MultiDict) como chegam (inclusive data[PARAMS][...])."""
     out = {}
     try:
         for k, v in form.items(multi=True):
@@ -61,7 +58,6 @@ def _flatten_form_all(form):
             else:
                 out[k] = v
     except Exception:
-        # fallback simples
         for k in form.keys():
             if hasattr(form, "getlist"):
                 vals = form.getlist(k)
@@ -71,7 +67,6 @@ def _flatten_form_all(form):
     return out
 
 def _pick(keys, d):
-    """Retorna o primeiro valor não-vazio encontrado em d para as chaves da lista keys."""
     for k in keys:
         if k in d and d[k]:
             return d[k]
@@ -80,23 +75,18 @@ def _pick(keys, d):
 def _send_imbot_message(dialog_id: str, text: str):
     """
     Envia mensagem como o BOT via imbot.message.add.
-    Requer BOT_ID. Mantém CLIENT_ID=134 como você pediu.
+    IMPORTANTE: NÃO envie CLIENT_ID aqui. O Bitrix usa o token do webhook para validar a app.
     """
     if not BOT_ID:
-        raise RuntimeError("BOT_ID não configurado. Defina a env BOT_ID ou deixe o default '134'.")
-    url = f"{BITRIX_WEBHOOK}/imbot.message.add.json"
+        raise RuntimeError("BOT_ID não configurado. Defina a env BOT_ID.")
+    url = f"{BITRIX_WEBHOOK_SEND}/imbot.message.add.json"
     body = {
         "BOT_ID": BOT_ID,
         "DIALOG_ID": dialog_id,
-        "CLIENT_ID": CLIENT_ID_RESPOSTA,
         "MESSAGE": text
     }
-    r = requests.post(
-        url,
-        json=body,
-        headers={"Content-Type": "application/json"},
-        timeout=15
-    )
+    app.logger.info(f"[imbot.message.add] POST {url} body={body}")
+    r = requests.post(url, json=body, headers={"Content-Type": "application/json"}, timeout=15)
     app.logger.info(f"[imbot.message.add] status={r.status_code} resp={r.text[:400]}")
     return r
 
@@ -110,21 +100,17 @@ def home():
 @app.route("/install", methods=["POST"])
 def install():
     """
-    Registra o bot no portal informando os endpoints de evento.
-    (Não usamos CLIENT_ID no registro via webhook inbound)
+    Registra o bot informando os endpoints (sem CLIENT_ID no registro).
     """
     data = request.args.to_dict()
     app.logger.info(f"📦 Dados recebidos na instalação: {data}")
 
     domain = data.get("DOMAIN")
     protocol = "https" if data.get("PROTOCOL") == "1" else "http"
-
     if not domain:
         return jsonify({"erro": "Domain não especificado", "status": "Erro interno"}), 500
 
-    # Usa o próprio portal + webhook para registrar
-    # Ex.: https://<domain>/rest/1/<webhook_key>/imbot.register.json
-    # Preferimos usar o WEBHOOK_KEY já ativo (do ambiente ou default)
+    # tenta extrair a chave do webhook da env BITRIX_WEBHOOK (se existir)
     webhook_key_from_env = None
     bw = os.getenv("BITRIX_WEBHOOK", "").strip()
     if bw and "/rest/" in bw:
@@ -133,11 +119,11 @@ def install():
         except Exception:
             webhook_key_from_env = None
 
-    key_to_use = webhook_key_from_env or WEBHOOK_KEY_DEFAULT
+    key_to_use = webhook_key_from_env or WEBHOOK_KEY_NEW_DEFAULT
     webhook_url = f"{protocol}://{domain}/rest/1/{key_to_use}/imbot.register.json"
 
     payload = {
-        "CODE": "ana_lis_lab_cac_v2",
+        "CODE": "ana_lis_agente_ia_v3",
         "TYPE": "B",
         "EVENT_MESSAGE_ADD": f"{PUBLIC_URL}/handler",
         "EVENT_WELCOME_MESSAGE": f"{PUBLIC_URL}/handler",
@@ -147,7 +133,6 @@ def install():
             "NAME": BOT_NAME,
             "COLOR": BOT_COLOR
         }
-        # Sem CLIENT_ID no registro (webhook inbound não precisa)
     }
 
     try:
@@ -167,13 +152,11 @@ def bitrix_handler():
     """
     ÚNICO handler:
     - Aceita JSON e x-www-form-urlencoded
-    - Extrai DIALOG_ID e MESSAGE de forma abrangente
+    - Extrai DIALOG_ID e MESSAGE
     - Mantém sua lógica: texto -> chamar_openai_com; arquivo -> processar_arquivo_do_bitrix
-    - Envia resposta via imbot.message.add **sempre com BOT_ID e CLIENT_ID=134**
-    - Retorna 200 rápido
+    - Envia resposta via imbot.message.add **com BOT_ID** (sem CLIENT_ID)
     """
     try:
-        # 1) Normaliza payload
         payload = request.get_json(silent=True)
         if not payload:
             payload = _flatten_form_all(request.form)
@@ -181,22 +164,18 @@ def bitrix_handler():
         app.logger.info(f"[HANDLER] ct={request.headers.get('Content-Type','')}")
         app.logger.info(f"[HANDLER] payload={payload}")
 
-        # 2) Filtra eventos relevantes
         evt = (payload.get("event") or payload.get("EVENT") or "").upper()
         if evt not in ("ONIMBOTMESSAGEADD", "ONIMBOTJOINCHAT", "ONIMBOTDELETE"):
             return jsonify({"status": "ignored", "event": evt}), 200
 
-        # 3) Extrai IDs e mensagem
         dialog_id = _pick([
             "data[PARAMS][DIALOG_ID]", "data[DIALOG_ID]", "DIALOG_ID",
             "data[PARAMS][CHAT_ID]", "CHAT_ID"
         ], payload)
         text = _pick(["data[PARAMS][MESSAGE]", "data[MESSAGE]", "MESSAGE"], payload) or ""
-
         if not dialog_id:
             return jsonify({"status": "no_dialog"}), 200
 
-        # 4) Restrições de horário (opcional)
         if HABILITAR_RESTRICAO_HORARIO:
             hora = datetime.now().hour
             minuto = datetime.now().minute
@@ -208,7 +187,7 @@ def bitrix_handler():
                     app.logger.error(f"Falha ao enviar msg de limite: {e}")
                 return jsonify({"status": "fora_do_horario"}), 200
 
-        # 5) Detecta arquivo (mantém sua lógica)
+        # Detecta arquivo
         arquivo_url = None
         arquivo_nome = None
         if isinstance(payload, dict):
@@ -221,7 +200,7 @@ def bitrix_handler():
                     arquivo_nome = payload.get(f"data[PARAMS][FILES][{file_id}][name]", "arquivo_desconhecido")
                     break
 
-        # 6) Gera resposta com sua IA atual
+        # Gera resposta
         if arquivo_url and arquivo_nome:
             app.logger.info("📂 Arquivo detectado! Enviando ao processador de arquivo...")
             try:
@@ -240,7 +219,7 @@ def bitrix_handler():
         else:
             resposta_ia = "❗Mensagem vazia ou sem arquivo. Por favor, envie um texto ou anexo válido."
 
-        # 7) Envia ao Bitrix (como BOT, com BOT_ID e CLIENT_ID=134)
+        # Envia ao Bitrix (como BOT, sem CLIENT_ID no body)
         try:
             _send_imbot_message(dialog_id, resposta_ia)
         except Exception as e:
@@ -256,6 +235,5 @@ def bitrix_handler():
 # Run
 # =========================
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))  # Render define a porta via variável de ambiente
+    port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
-
