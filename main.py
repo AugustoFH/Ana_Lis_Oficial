@@ -34,8 +34,9 @@ BITRIX_WEBHOOK = os.getenv(
     f"https://laboratoriocac.bitrix24.com.br/rest/1/{WEBHOOK_KEY_DEFAULT}"
 ).rstrip("/")  # sem barra no fim, para concatenar melhor
 
-# CLIENT_ID fixo para RESPOSTAS no chat (como você pediu)
-CLIENT_ID_RESPOSTA = os.getenv("CLIENT_ID_RESPOSTA", "134")
+# Enviar como BOT (Opção A)
+BOT_ID = os.getenv("BOT_ID", "134")          # defina no Render se quiser diferente
+CLIENT_ID_RESPOSTA = "134"                   # fixo conforme seu pedido
 
 # =========================
 # Utilitários
@@ -78,11 +79,14 @@ def _pick(keys, d):
 
 def _send_imbot_message(dialog_id: str, text: str):
     """
-    Envia mensagem pelo imbot, passando CLIENT_ID fixo (134).
-    Observação: aqui NÃO forçamos BOT_ID, pois você pediu apenas o CLIENT_ID.
+    Envia mensagem como o BOT via imbot.message.add.
+    Requer BOT_ID. Mantém CLIENT_ID=134 como você pediu.
     """
+    if not BOT_ID:
+        raise RuntimeError("BOT_ID não configurado. Defina a env BOT_ID ou deixe o default '134'.")
     url = f"{BITRIX_WEBHOOK}/imbot.message.add.json"
     body = {
+        "BOT_ID": BOT_ID,
         "DIALOG_ID": dialog_id,
         "CLIENT_ID": CLIENT_ID_RESPOSTA,
         "MESSAGE": text
@@ -107,7 +111,7 @@ def home():
 def install():
     """
     Registra o bot no portal informando os endpoints de evento.
-    (Mantido aqui para conveniência; não usamos CLIENT_ID no registro via webhook inbound)
+    (Não usamos CLIENT_ID no registro via webhook inbound)
     """
     data = request.args.to_dict()
     app.logger.info(f"📦 Dados recebidos na instalação: {data}")
@@ -143,7 +147,7 @@ def install():
             "NAME": BOT_NAME,
             "COLOR": BOT_COLOR
         }
-        # Não enviamos CLIENT_ID no registro via webhook inbound
+        # Sem CLIENT_ID no registro (webhook inbound não precisa)
     }
 
     try:
@@ -165,7 +169,7 @@ def bitrix_handler():
     - Aceita JSON e x-www-form-urlencoded
     - Extrai DIALOG_ID e MESSAGE de forma abrangente
     - Mantém sua lógica: texto -> chamar_openai_com; arquivo -> processar_arquivo_do_bitrix
-    - Envia resposta via imbot.message.add **sempre com CLIENT_ID=134**
+    - Envia resposta via imbot.message.add **sempre com BOT_ID e CLIENT_ID=134**
     - Retorna 200 rápido
     """
     try:
@@ -236,7 +240,7 @@ def bitrix_handler():
         else:
             resposta_ia = "❗Mensagem vazia ou sem arquivo. Por favor, envie um texto ou anexo válido."
 
-        # 7) Envia ao Bitrix (sempre com CLIENT_ID=134)
+        # 7) Envia ao Bitrix (como BOT, com BOT_ID e CLIENT_ID=134)
         try:
             _send_imbot_message(dialog_id, resposta_ia)
         except Exception as e:
@@ -254,3 +258,4 @@ def bitrix_handler():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))  # Render define a porta via variável de ambiente
     app.run(host="0.0.0.0", port=port)
+
