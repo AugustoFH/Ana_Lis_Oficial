@@ -153,11 +153,12 @@ def bitrix_handler():
     """
     ÚNICO handler:
     - Aceita JSON e x-www-form-urlencoded
-    - Extrai DIALOG_ID e MESSAGE
-    - Mantém sua lógica: texto -> chamar_openai_com; arquivo -> processar_arquivo_do_bitrix
-    - Envia resposta via imbot.message.add **com BOT_ID** (sem CLIENT_ID)
+    - Checa horário primeiro; se fora, responde e sai
+    - Se for evento de boas-vindas, envia WELCOME_MESSAGE e sai
+    - Caso contrário, processa texto/arquivo, chama a IA e responde como BOT (BOT_ID + CLIENT_ID quando necessário)
     """
     try:
+        # 1) Normaliza payload
         payload = request.get_json(silent=True)
         if not payload:
             payload = _flatten_form_all(request.form)
@@ -165,49 +166,45 @@ def bitrix_handler():
         app.logger.info(f"[HANDLER] ct={request.headers.get('Content-Type','')}")
         app.logger.info(f"[HANDLER] payload={payload}")
 
+        # 2) Evento + IDs
         evt = (payload.get("event") or payload.get("EVENT") or "").upper()
-        if evt not in ("ONIMBOTMESSAGEADD", "ONIMBOTJOINCHAT", "ONIMBOTDELETE"):
-            return jsonify({"status": "ignored", "event": evt}), 200
-
         dialog_id = _pick([
             "data[PARAMS][DIALOG_ID]", "data[DIALOG_ID]", "DIALOG_ID",
             "data[PARAMS][CHAT_ID]", "CHAT_ID"
         ], payload)
         text = _pick(["data[PARAMS][MESSAGE]", "data[MESSAGE]", "MESSAGE"], payload) or ""
-       # evt e dialog_id já extraídos acima...
-# evt = (payload.get("event") or payload.get("EVENT") or "").upper()
-# dialog_id = _pick([...], payload)
-# text = _pick([...], payload) or ""
 
-if not dialog_id:
-    return jsonify({"status": "no_dialog"}), 200
+        if not dialog_id:
+            return jsonify({"status": "no_dialog"}), 200
 
-# 1) Horário primeiro (aplica a welcome e mensagens)
-if HABILITAR_RESTRICAO_HORARIO:
-    hora = datetime.now().hour
-    minuto = datetime.now().minute
-    if hora < 6 or (hora == 6 and minuto < 30) or hora >= 23:
-        mensagem_limite = (
-            "Ana Lis - Agente IA está disponível das 06:30 às 18:00. "
-            "Por favor, retorne nesse horário 😊"
-        )
-        try:
-            _send_imbot_message(dialog_id, mensagem_limite)  # usa BOT_ID=136 e CLIENT_ID=1 (já configurado)
-        except Exception as e:
-            app.logger.error(f"Falha ao enviar msg de limite: {e}")
-        return jsonify({"status": "fora_do_horario"}), 200
+        # 3) Horário primeiro (vale para welcome e mensagens)
+        if HABILITAR_RESTRICAO_HORARIO:
+            hora = datetime.now().hour
+            minuto = datetime.now().minute
+            if hora < 6 or (hora == 6 and minuto < 30) or hora >= 23:
+                mensagem_limite = (
+                    "Ana Lis - Agente IA está disponível das 06:30 às 18:00. "
+                    "Por favor, retorne nesse horário 😊"
+                )
+                try:
+                    _send_imbot_message(dialog_id, mensagem_limite)
+                except Exception as e:
+                    app.logger.error(f"Falha ao enviar msg de limite: {e}")
+                return jsonify({"status": "fora_do_horario"}), 200
 
-# 2) Welcome DEPOIS de checar horário e ANTES de chamar a IA
-if evt in ("ONIMBOTJOINCHAT", "ONIMBOTWELCOMEMESSAGE"):
-    try:
-        _send_imbot_message(dialog_id, WELCOME_MESSAGE)
-    except Exception as e:
-        app.logger.error(f"Falha ao enviar welcome: {e}")
-    return jsonify({"status": "welcome_sent"}), 200
+        # 4) Welcome DEPOIS de checar horário e ANTES de chamar a IA
+        if evt in ("ONIMBOTJOINCHAT", "ONIMBOTWELCOMEMESSAGE"):
+            try:
+                _send_imbot_message(dialog_id, WELCOME_MESSAGE)
+            except Exception as e:
+                app.logger.error(f"Falha ao enviar welcome: {e}")
+            return jsonify({"status": "welcome_sent"}), 200
 
-# 3) Só daqui pra frente processa a mensagem normal (texto/arquivo + IA)
+        # 5) Ignore eventos que não nos interessam
+        if evt not in ("ONIMBOTMESSAGEADD", "ONIMBOTJOINCHAT", "ONIMBOTDELETE", "ONIMBOTWELCOMEMESSAGE"):
+            return jsonify({"status": "ignored", "event": evt}), 200
 
-        # Detecta arquivo
+        # 6) Detecta arquivo (mantém sua lógica)
         arquivo_url = None
         arquivo_nome = None
         if isinstance(payload, dict):
@@ -220,7 +217,7 @@ if evt in ("ONIMBOTJOINCHAT", "ONIMBOTWELCOMEMESSAGE"):
                     arquivo_nome = payload.get(f"data[PARAMS][FILES][{file_id}][name]", "arquivo_desconhecido")
                     break
 
-        # Gera resposta
+        # 7) Gera resposta (IA ou fallback)
         if arquivo_url and arquivo_nome:
             app.logger.info("📂 Arquivo detectado! Enviando ao processador de arquivo...")
             try:
@@ -234,12 +231,12 @@ if evt in ("ONIMBOTJOINCHAT", "ONIMBOTWELCOMEMESSAGE"):
                 resposta_ia = chamar_openai_com(text)
             except Exception as e:
                 app.logger.error(f"chamar_openai_com erro: {e}")
-                resposta_ia = "❗Ocorreu um erro ao processar sua mensagem."
+                resposta_ia = "❗Erro ao processar com a IA. Tente novamente."
             resposta_ia = limpar_marcadores_de_citacao(resposta_ia)
         else:
             resposta_ia = "❗Mensagem vazia ou sem arquivo. Por favor, envie um texto ou anexo válido."
 
-        # Envia ao Bitrix (como BOT, sem CLIENT_ID no body)
+        # 8) Envia ao Bitrix (como BOT, com BOT_ID e CLIENT_ID se exigido pelo tenant)
         try:
             _send_imbot_message(dialog_id, resposta_ia)
         except Exception as e:
