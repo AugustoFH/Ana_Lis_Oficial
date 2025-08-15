@@ -83,6 +83,7 @@ def _send_imbot_message(dialog_id: str, text: str):
     body = {
         "BOT_ID": BOT_ID,
         "DIALOG_ID": dialog_id,
+        "CLIENT_ID": "1",
         "MESSAGE": text
     }
     app.logger.info(f"[imbot.message.add] POST {url} body={body}")
