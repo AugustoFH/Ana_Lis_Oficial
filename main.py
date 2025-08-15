@@ -26,12 +26,16 @@ WELCOME_MESSAGE = "Olá! Sou a Ana Lis - Agente IA, sua assistente virtual. Como
 
 # URLs e Webhook
 PUBLIC_URL = os.getenv("PUBLIC_URL", "https://lis-v2-bot.onrender.com")
-# NOVO webhook informado por você:
+
+# NOVO webhook informado por você (pode sobrescrever via env BITRIX_WEBHOOK)
 WEBHOOK_KEY_DEFAULT = "ycsu4kix9ahlcff0"
 BITRIX_WEBHOOK = os.getenv(
     "BITRIX_WEBHOOK",
     f"https://laboratoriocac.bitrix24.com.br/rest/1/{WEBHOOK_KEY_DEFAULT}"
-)
+).rstrip("/")  # sem barra no fim, para concatenar melhor
+
+# CLIENT_ID fixo para RESPOSTAS no chat (como você pediu)
+CLIENT_ID_RESPOSTA = os.getenv("CLIENT_ID_RESPOSTA", "134")
 
 # =========================
 # Utilitários
@@ -72,12 +76,24 @@ def _pick(keys, d):
             return d[k]
     return None
 
-def _send_im_message(dialog_id: str, text: str):
-    """Envia mensagem como o usuário do webhook (im.message.add)."""
-    url = f"{BITRIX_WEBHOOK}/im.message.add.json"
-    body = {"DIALOG_ID": dialog_id, "MESSAGE": text}
-    r = requests.post(url, json=body, headers={"Content-Type": "application/json"}, timeout=15)
-    app.logger.info(f"[im.message.add] status={r.status_code} resp={r.text[:400]}")
+def _send_imbot_message(dialog_id: str, text: str):
+    """
+    Envia mensagem pelo imbot, passando CLIENT_ID fixo (134).
+    Observação: aqui NÃO forçamos BOT_ID, pois você pediu apenas o CLIENT_ID.
+    """
+    url = f"{BITRIX_WEBHOOK}/imbot.message.add.json"
+    body = {
+        "DIALOG_ID": dialog_id,
+        "CLIENT_ID": CLIENT_ID_RESPOSTA,
+        "MESSAGE": text
+    }
+    r = requests.post(
+        url,
+        json=body,
+        headers={"Content-Type": "application/json"},
+        timeout=15
+    )
+    app.logger.info(f"[imbot.message.add] status={r.status_code} resp={r.text[:400]}")
     return r
 
 # =========================
@@ -91,7 +107,7 @@ def home():
 def install():
     """
     Registra o bot no portal informando os endpoints de evento.
-    Não usa CLIENT_ID (webhook inbound não precisa).
+    (Mantido aqui para conveniência; não usamos CLIENT_ID no registro via webhook inbound)
     """
     data = request.args.to_dict()
     app.logger.info(f"📦 Dados recebidos na instalação: {data}")
@@ -105,17 +121,15 @@ def install():
     # Usa o próprio portal + webhook para registrar
     # Ex.: https://<domain>/rest/1/<webhook_key>/imbot.register.json
     # Preferimos usar o WEBHOOK_KEY já ativo (do ambiente ou default)
-    webhook_key = os.getenv("BITRIX_WEBHOOK", "").strip()
-    if webhook_key and "/rest/" in webhook_key:
-        # Se veio a URL completa em BITRIX_WEBHOOK, reaproveitamos o subpath após /rest/1/
+    webhook_key_from_env = None
+    bw = os.getenv("BITRIX_WEBHOOK", "").strip()
+    if bw and "/rest/" in bw:
         try:
-            after_rest = webhook_key.split("/rest/1/")[1].strip("/")
+            webhook_key_from_env = bw.split("/rest/1/")[1].strip("/").split("/")[0]
         except Exception:
-            after_rest = WEBHOOK_KEY_DEFAULT
-        key_to_use = after_rest
-    else:
-        key_to_use = WEBHOOK_KEY_DEFAULT
+            webhook_key_from_env = None
 
+    key_to_use = webhook_key_from_env or WEBHOOK_KEY_DEFAULT
     webhook_url = f"{protocol}://{domain}/rest/1/{key_to_use}/imbot.register.json"
 
     payload = {
@@ -129,11 +143,11 @@ def install():
             "NAME": BOT_NAME,
             "COLOR": BOT_COLOR
         }
+        # Não enviamos CLIENT_ID no registro via webhook inbound
     }
 
     try:
         response = requests.post(webhook_url, json=payload, timeout=20)
-        bitrix_result = {}
         try:
             bitrix_result = response.json()
         except Exception:
@@ -151,7 +165,7 @@ def bitrix_handler():
     - Aceita JSON e x-www-form-urlencoded
     - Extrai DIALOG_ID e MESSAGE de forma abrangente
     - Mantém sua lógica: texto -> chamar_openai_com; arquivo -> processar_arquivo_do_bitrix
-    - Envia resposta para o Bitrix via im.message.add (sem forçar BOT_ID)
+    - Envia resposta via imbot.message.add **sempre com CLIENT_ID=134**
     - Retorna 200 rápido
     """
     try:
@@ -185,7 +199,7 @@ def bitrix_handler():
             if hora < 6 or (hora == 6 and minuto < 30) or hora >= 23:
                 mensagem_limite = "Ana Lis - Agente IA está disponível das 06:30 às 18:00. Por favor, retorne nesse horário 😊"
                 try:
-                    _send_im_message(dialog_id, mensagem_limite)
+                    _send_imbot_message(dialog_id, mensagem_limite)
                 except Exception as e:
                     app.logger.error(f"Falha ao enviar msg de limite: {e}")
                 return jsonify({"status": "fora_do_horario"}), 200
@@ -222,9 +236,9 @@ def bitrix_handler():
         else:
             resposta_ia = "❗Mensagem vazia ou sem arquivo. Por favor, envie um texto ou anexo válido."
 
-        # 7) Envia ao Bitrix (como usuário do webhook, sem forçar BOT_ID)
+        # 7) Envia ao Bitrix (sempre com CLIENT_ID=134)
         try:
-            _send_im_message(dialog_id, resposta_ia)
+            _send_imbot_message(dialog_id, resposta_ia)
         except Exception as e:
             app.logger.error(f"Falha ao enviar ao Bitrix: {e}")
 
